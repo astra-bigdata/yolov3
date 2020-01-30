@@ -216,11 +216,9 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
 
             # Plot
             # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-            # ax.plot(recall, precision)
-            # ax.set_xlabel('Recall')
-            # ax.set_ylabel('Precision')
-            # ax.set_xlim(0, 1.01)
-            # ax.set_ylim(0, 1.01)
+            # ax.plot(np.concatenate(([0.], recall)), np.concatenate(([0.], precision)))
+            # ax.set_title('YOLOv3-SPP'); ax.set_xlabel('Recall'); ax.set_ylabel('Precision')
+            # ax.set_xlim(0, 1)
             # fig.tight_layout()
             # fig.savefig('PR_curve.png', dpi=300)
 
@@ -799,14 +797,10 @@ def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(320, 640)):
     # ax[0].plot(np.arange(1, 21), np.array(d) ** 2, marker='.')
 
     # Evolve
-    npr = np.random
     wh = torch.Tensor(wh)
-    f, sh, ng, mp, s = fitness(thr, wh, k), k.shape, 1000, 0.9, 0.1  # fitness, generations, mutation probability, sigma
+    f, ng = fitness(thr, wh, k), 1000  # fitness, generations
     for _ in tqdm(range(ng), desc='Evolving anchors'):
-        v = np.ones(sh)
-        while (v == 1).all():  # mutate until a change occurs (prevent duplicates)
-            v = ((npr.random(sh) < mp) * npr.random() * npr.randn(*sh) * s + 1).clip(0.3, 3.0)  # 98.6, 61.6
-        kg = (k.copy() * v).clip(min=2.0)
+        kg = (k.copy() * (1 + np.random.random() * np.random.randn(*k.shape) * 0.30)).clip(min=2.0)
         fg = fitness(thr, wh, kg)
         if fg > f:
             f, k = fg, kg.copy()

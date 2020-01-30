@@ -103,7 +103,7 @@ def train():
     # optimizer = torch_utils.Lookahead(optimizer, k=5, alpha=0.5)
 
     start_epoch = 0
-    best_fitness = 0.0
+    best_fitness = float('inf')
     attempt_download(weights)
     if weights.endswith('.pt'):  # pytorch format
         # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
@@ -246,7 +246,7 @@ def train():
 
             # Multi-Scale training
             if opt.multi_scale:
-                if ni / accumulate % 10 == 0:  #  adjust (67% - 150%) every 10 batches
+                if ni / accumulate % 10 == 0:  #  adjust (67% - 150%) every 10 batches
                     img_size = random.randrange(img_sz_min, img_sz_max + 1) * 32
                 sf = img_size / max(imgs.shape[2:])  # scale factor
                 if sf != 1:
@@ -337,9 +337,9 @@ def train():
                 tb_writer.add_scalar(title, xi, epoch)
 
         # Update best mAP
-        fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
-        if fi > best_fitness:
-            best_fitness = fi
+        fitness = sum(results[4:])  # total loss
+        if fitness < best_fitness:
+            best_fitness = fitness
 
         # Save training results
         save = (not opt.nosave) or (final_epoch and not opt.evolve)
@@ -357,7 +357,7 @@ def train():
             torch.save(chkpt, last)
 
             # Save best checkpoint
-            if best_fitness == fi:
+            if best_fitness == fitness:
                 torch.save(chkpt, best)
 
             # Save backup every 10 epochs (optional)
@@ -382,7 +382,6 @@ def train():
         if opt.bucket:
             os.system('gsutil cp %s gs://%s/results' % (fresults, opt.bucket))
             os.system('gsutil cp %s gs://%s/weights' % (wdir + flast, opt.bucket))
-            os.system('gsutil cp %s gs://%s/weights' % (wdir + fbest, opt.bucket))
 
     if not opt.evolve:
         plot_results()  # save as results.png
@@ -449,7 +448,7 @@ if __name__ == '__main__':
                 # Select parent(s)
                 parent = 'single'  # parent selection method: 'single' or 'weighted'
                 x = np.loadtxt('evolve.txt', ndmin=2)
-                n = min(5, len(x))  # number of previous results to consider
+                n = min(8, len(x))  # number of previous results to consider
                 x = x[np.argsort(-fitness(x))][:n]  # top n mutations
                 w = fitness(x) - fitness(x).min()  # weights
                 if parent == 'single' or len(x) == 1:
@@ -459,20 +458,20 @@ if __name__ == '__main__':
                     x = (x * w.reshape(n, 1)).sum(0) / w.sum()  # weighted combination
 
                 # Mutate
-                method, mp, s = 3, 0.9, 0.2  # method, mutation probability, sigma
-                npr = np.random
-                npr.seed(int(time.time()))
+                method = 3
+                s = 0.3  # 30% sigma
+                np.random.seed(int(time.time()))
                 g = np.array([1, 1, 1, 1, 1, 1, 1, 0, .1, 1, 0, 1, 1, 1, 1, 1, 1, 1])  # gains
                 ng = len(g)
                 if method == 1:
-                    v = (npr.randn(ng) * npr.random() * g * s + 1) ** 2.0
+                    v = (np.random.randn(ng) * np.random.random() * g * s + 1) ** 2.0
                 elif method == 2:
-                    v = (npr.randn(ng) * npr.random(ng) * g * s + 1) ** 2.0
+                    v = (np.random.randn(ng) * np.random.random(ng) * g * s + 1) ** 2.0
                 elif method == 3:
                     v = np.ones(ng)
                     while all(v == 1):  # mutate until a change occurs (prevent duplicates)
-                        # v = (g * (npr.random(ng) < mp) * npr.randn(ng) * s + 1) ** 2.0
-                        v = (g * (npr.random(ng) < mp) * npr.randn(ng) * npr.random() * s + 1).clip(0.3, 3.0)
+                        r = (np.random.random(ng) < 0.1) * np.random.randn(ng)  # 10% mutation probability
+                        v = (g * s * r + 1) ** 2.0
                 for i, k in enumerate(hyp.keys()):  # plt.hist(v.ravel(), 300)
                     hyp[k] = x[i + 7] * v[i]  # mutate
 
